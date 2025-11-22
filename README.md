@@ -406,7 +406,3 @@ Obiettivo: demo super chiara in 30–60 secondi.
      Se è solo un proxy verso il VLM, avete sbagliato.
   3. **Il flusso demo è chiaro anche a uno non tecnico in 1 minuto?**
      Se serve spiegare 3 minuti di architettura, avete sbagliato.
-
----
-
-Se vuoi, prossimo passo posso prendere questa scaletta e trasformarla in una **tabella con task assegnati per persona + priorità (must/should/nice)** così avete un vero piano di lavoro da seguire.
