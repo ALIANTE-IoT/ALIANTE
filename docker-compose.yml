@@ -1,0 +1,74 @@
+x-drone-env: &drone_env
+    VEHICLE: "copter"
+    HOME_LAT: "44.494000"
+    HOME_LON: "11.342000"
+    HOME_ALT: "10"
+    HOME_HDG: "0"
+    SIM_SPEEDUP: "1"
+    WOT_PORT: "8080"
+    WIPE_EEPROM: "1"
+
+x-drone-svc: &drone_svc
+    build: ./drone
+    restart: unless-stopped
+    networks: [drones]
+
+services:
+    # Drone 1: SITL+MAVProxy
+    drone1:
+        <<: *drone_svc
+        environment:
+            <<: *drone_env
+            GCS_TCP_PORT: "5770"
+            SYSID: "1"
+            HOME_LAT: "44.494000"
+            HOME_LON: "11.342000"
+            SERVIENT_HOST: "127.0.0.1"
+            SERVIENT_UDP_PORT: "14550"
+            M2R_HOST: "127.0.0.1"
+            M2R_PORT: "14551"
+        ports:
+            - "127.0.0.1:5770:5770"
+            - "127.0.0.1:18088:8088"
+            - "127.0.0.1:14551:14551"
+
+    # mavlink2rest for drone1
+    mav2rest1:
+        image: patrickelectric/mavlink2rest:latest
+        depends_on: [drone1]
+        network_mode: "service:drone1"
+        environment:
+            MAVLINK_SRC: "udpin:127.0.0.1:14551"
+            SERVER_PORT: "0.0.0.0:8088"
+
+    # Node WoT Servient for drone1
+    servient1:
+        image: node:20-alpine
+        working_dir: /app
+        command: sh -lc "npm install && npm ci && node index.js"
+        restart: unless-stopped
+        networks: [drones]
+        depends_on:
+            mav2rest1: { condition: service_started }
+            drone1: { condition: service_started }
+            zion: { condition: service_started }
+        environment:
+            DRONE_NAME: "drone1"
+            SYSID: "1"
+            WOT_PORT: "8080"
+            M2R_BASE: "http://drone1:8088"
+            TDD_URL: "http://zion:3000"
+            ZION_EMAIL: "drone1@mail.com"
+            ZION_PASSWORD: "drone1password"
+            ZION_JWT_SECRET: "prismlab"
+            ZION_JWT_EXPIRES_IN: "7d"
+        volumes:
+            - ./servients/drone-node:/app
+        ports:
+            - "127.0.0.1:19080:8080"
+
+networks:
+    drones:
+        driver: bridge
+volumes:
+    zion_pg:
