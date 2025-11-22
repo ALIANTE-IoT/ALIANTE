@@ -7,11 +7,14 @@ from PIL import Image
 import google.generativeai as genai
 from sklearn.cluster import MeanShift, estimate_bandwidth
 import matplotlib.pyplot as plt
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class TreeAnalysisPipeline:
     def __init__(self, gemini_api_key):
         genai.configure(api_key=gemini_api_key)
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
         
     def encode_image_to_base64(self, image_path):
         with open(image_path, "rb") as image_file:
@@ -110,11 +113,9 @@ class TreeAnalysisPipeline:
         results = []
         
         for idx, cluster_img in enumerate(cluster_images):
-            # Salva temporaneamente l'immagine del cluster
             temp_path = f"temp_cluster_{idx}.png"
             cv2.imwrite(temp_path, cv2.cvtColor(cluster_img, cv2.COLOR_RGB2BGR))
             
-            # Prompt per identificazione tipo di albero
             prompt = f"""Analizza questo cluster di vegetazione e determina:
 1. Che tipo di albero/pianta è probabile che sia
 2. Caratteristiche distintive visibili (forma foglie, colore, texture)
@@ -131,18 +132,20 @@ Rispondi in formato JSON con i campi: tree_type, characteristics, confidence, no
         return results
     
     def run_full_pipeline(self, image_path, initial_prompt=None, point_coords=None):
+        initial_prompt = """Analizza questa immagine e fornisci una panoramica generale:
+                            - Quanti alberi o gruppi di vegetazione sono visibili?
+                            - Quali sono le caratteristiche generali dell'ambiente?
+                            - Ci sono diversi tipi di vegetazione?"""
         results = {
             "image_path": image_path,
             "pipeline_steps": []
         }
         
-        # Step 1: Analisi iniziale con Gemini (opzionale)
         if initial_prompt:
             print("Step 1: Analisi iniziale con Gemini...")
             initial_analysis = self.call_gemini_api(initial_prompt, image_path)
             results["initial_analysis"] = initial_analysis
             results["pipeline_steps"].append("initial_gemini_analysis")
-        # Step 2: Segmentazione immagine
         print("Step 2: Segmentazione immagine...")
         mask, img_rgb = self.segment_with_sam(image_path, point_coords)
         results["segmentation"] = {
@@ -151,12 +154,10 @@ Rispondi in formato JSON con i campi: tree_type, characteristics, confidence, no
         }
         results["pipeline_steps"].append("segmentation")
         
-        # Salva immagine segmentata
         segmented_img = img_rgb.copy()
         segmented_img[mask == 0] = [0, 0, 0]
         cv2.imwrite("segmented_result.png", cv2.cvtColor(segmented_img, cv2.COLOR_RGB2BGR))
         
-        # Step 3: Mean Shift Clustering
         print("Step 3: Clustering con Mean Shift...")
         labels, n_clusters, clustered_img, cluster_images = self.apply_mean_shift_clustering(
             img_rgb, mask
@@ -175,6 +176,29 @@ Rispondi in formato JSON con i campi: tree_type, characteristics, confidence, no
         
         return results
     
+    def only_geminai_pipeline(self, image_path, initial_prompt=None, point_coords=None):
+        results = {
+            "image_path": image_path,
+            "pipeline_steps": []
+        }   
+        if initial_prompt:
+            print("Analisi iniziale con Gemini...")
+            initial_analysis = self.call_gemini_api(initial_prompt, image_path)
+            results["initial_analysis"] = initial_analysis
+            results["pipeline_steps"].append("initial_gemini_analysis")
+        prompt = """Analizza questa immagine e fornisci una panoramica dettagliata sugli alberi e la vegetazione presenti, includendo:
+                    1. Numero di alberi o gruppi di vegetazione visibili
+                    2. Tipi di alberi o piante identificabili
+                    3. Caratteristiche distintive visibili (forma foglie, colore, texture)
+                    4. Condizioni generali dell'ambiente (salute della vegetazione, presenza di malattie)
+                    5. Note aggiuntive rilevanti"""
+        geminai_analysis = self.call_gemini_api(prompt, image_path)
+        results["geminai_full_analysis"] = geminai_analysis
+        results["pipeline_steps"].append("geminai_full_analysis")
+        return results
+    
+        
+    
     def save_results(self, results, output_path="tree_analysis_results.json"):
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
@@ -183,18 +207,25 @@ Rispondi in formato JSON con i campi: tree_type, characteristics, confidence, no
 
 
 if __name__ == "__main__":
-    GEMINI_API_KEY = "your_gemini_api_key_here"
+    
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    
+    if not GEMINI_API_KEY:
+        raise ValueError("GEMINI_API_KEY non trovata nel file .env")
+    
     pipeline = TreeAnalysisPipeline(GEMINI_API_KEY)
-    image_path = "path/to/your/tree_image.jpg"
-    initial_prompt = """Analizza questa immagine e fornisci una panoramica generale:
-    - Quanti alberi o gruppi di vegetazione sono visibili?
-    - Quali sono le caratteristiche generali dell'ambiente?
-    - Ci sono diversi tipi di vegetazione?"""
-    results = pipeline.run_full_pipeline(
+    image_path = "/Users/gregoriopetruzzi/Downloads/asecond.jpg"
+    
+    for m in genai.list_models():
+        if 'generateContent' in m.supported_generation_methods:
+            print(m.name)
+   
+    results = pipeline.only_geminai_pipeline(
         image_path=image_path,
-        initial_prompt=initial_prompt,
         point_coords=None 
     )
+    print("\n=== RISULTATI PIPELINE SOLO GEMINAI ===")  
+    print(json.dumps(results, indent=2, ensure_ascii=False))
     pipeline.save_results(results)
 
     print("\n=== SOMMARIO ANALISI ===")
