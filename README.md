@@ -1,5 +1,9 @@
 # ALIANTE
 
+<p align="center">
+  <img src="docs/images/logo.webp" alt="ALIANTE Logo" width="220">
+</p>
+
 **A**utomated **L**andscape **I**mage **A**nalysis with **N**eural **T**echnology and **E**cosystems
 
 A distributed system for automated biodiversity analysis of drone-captured images using Vision Language Models (VLMs) and image segmentation. The platform integrates drone simulation, image storage, AI-powered analysis, and a web-based interface for ecosystem assessment.
