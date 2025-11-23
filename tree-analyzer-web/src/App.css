@@ -75,6 +75,32 @@ header h1 {
     align-self: flex-start;
 }
 
+.prompt-label {
+    font-weight: 600;
+    font-size: 0.95rem;
+    opacity: 0.85;
+}
+
+textarea {
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 0.75rem;
+    background: rgba(0, 0, 0, 0.35);
+    color: inherit;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 90px;
+}
+
+.image-url {
+    font-size: 0.9rem;
+    opacity: 0.85;
+}
+
+.image-url a {
+    color: #7ed5ff;
+}
+
 .status {
     font-size: 0.95rem;
     opacity: 0.8;
@@ -90,13 +116,16 @@ header h1 {
     padding: 1.5rem;
     border: 1px solid rgba(255, 255, 255, 0.2);
     background: rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
 }
 
 .stat {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 0.75rem;
     font-size: 1.1rem;
+    gap: 1rem;
 }
 
 .stat .label {
@@ -105,20 +134,28 @@ header h1 {
 
 .stat .value {
     font-weight: 700;
+    text-align: right;
 }
 
-.results ul {
-    margin-top: 1rem;
-    margin-bottom: 1rem;
-    padding-left: 1rem;
+.summary {
+    font-size: 1rem;
+    line-height: 1.5;
 }
 
-.results li {
+.list-block ul {
+    margin: 0.6rem 0 0 1rem;
+    padding: 0;
+}
+
+.list-block li {
     margin-bottom: 0.35rem;
 }
 
-.reasoning {
-    margin-top: 1rem;
-    padding-top: 1rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.15);
+.result-footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9rem;
+    opacity: 0.8;
+    flex-wrap: wrap;
+    gap: 0.5rem;
 }
