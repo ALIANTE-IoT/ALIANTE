@@ -414,14 +414,6 @@ ALIANTE/
 - Check MAVLink system ID matches configuration
 - Ensure Zion TDD is running for Thing registration
 
-## License
-
-[Specify your license here]
-
-## Contributing
-
-[Add contribution guidelines if applicable]
-
 ## Acknowledgments
 
 - ArduPilot project for drone simulation
