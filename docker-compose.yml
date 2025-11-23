@@ -67,6 +67,53 @@ services:
         ports:
             - "127.0.0.1:19080:8080"
 
+    tree-analyzer-web:
+        build: ./tree-analyzer-web
+        restart: unless-stopped
+        depends_on:
+            tree-analyzer: { condition: service_started }
+        ports:
+            - "127.0.0.1:3000:80"
+        networks:
+            - drones
+
+    database:
+        image: postgres:14.3-alpine
+        restart: unless-stopped
+        environment:
+            POSTGRES_USER: zion
+            POSTGRES_PASSWORD: zion
+            POSTGRES_DB: zion
+        volumes:
+            - zion_pg:/var/lib/postgresql/data
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U zion -d zion"]
+            interval: 5s
+            timeout: 3s
+            retries: 20
+        networks: [drones]
+
+    zion:
+        image: vaimee/zion:latest
+        depends_on:
+            database:
+                condition: service_healthy
+        entrypoint:
+            ["sh", "-c", "npm run db:migrate:latest && npm run start:prod"]
+        ports:
+            - "127.0.0.1:28081:3000"
+        environment:
+            ZION_NODE_ENV: production
+            ZION_SERVER_PORT: 3000
+            ZION_DB_HOST: database
+            ZION_DB_PORT: 5432
+            ZION_DB_USER: zion
+            ZION_DB_PASSWORD: zion
+            ZION_DB_DATABASE: zion
+            ZION_JWT_SECRET: prismlab
+            ZION_JWT_EXPIRES_IN: 7d
+        networks: [drones]
+
 networks:
     drones:
         driver: bridge
