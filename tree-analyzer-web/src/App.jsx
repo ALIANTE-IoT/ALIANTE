@@ -124,6 +124,21 @@ function App() {
     };
 
     const currentAnalysis = analysis?.analysis;
+    const segmentationPayload =
+        analysis?.sam3Segmentations ?? currentAnalysis?.sam3Segmentations;
+
+    const renderSegmentationPayload = () => {
+        if (!segmentationPayload) {
+            return <p>No segmentation metadata available.</p>;
+        }
+
+        const serialized =
+            typeof segmentationPayload === "string"
+                ? segmentationPayload
+                : JSON.stringify(segmentationPayload, null, 2);
+
+        return <pre className="json-block">{serialized}</pre>;
+    };
 
     return (
         <div className="app-shell">
@@ -221,6 +236,11 @@ function App() {
                             </ul>
                         </div>
                     )}
+
+                    <div className="json-section">
+                        <h3>SAM3 Segmentations</h3>
+                        {renderSegmentationPayload()}
+                    </div>
 
                     <footer className="result-footer">
                         <span>Model: {analysis.model}</span>
