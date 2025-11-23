@@ -99,6 +99,10 @@ services:
     clustering:
         build: ./postprocessing
         restart: unless-stopped
+        environment:
+            OPENAI_API_KEY: "${OPENAI_API_KEY}"
+        volumes:
+            - ./reports:/app
         ports:
             - "127.0.0.1:5051:5051"
         networks:

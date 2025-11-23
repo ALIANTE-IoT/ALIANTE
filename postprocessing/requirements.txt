@@ -6,3 +6,5 @@ supervision
 torch
 transformers
 scikit-learn
+reportlab
+openai

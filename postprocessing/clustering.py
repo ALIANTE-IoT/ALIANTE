@@ -8,6 +8,16 @@ import torch
 from transformers import AutoModel, AutoProcessor
 from sklearn.cluster import AgglomerativeClustering
 from flask import Flask, request, jsonify
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle, Image as RLImage
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+import openai
+import os
+import base64
+from datetime import datetime
 
 # Variabile globale per memorizzare il JSON ricevuto
 json_data = None
@@ -121,8 +131,180 @@ def process_data():
         inputs = processor(images=crops, return_tensors="pt")
         embeddings = model(**inputs).pooler_output.cpu().numpy()
 
-    clustering = AgglomerativeClustering(n_clusters=None, distance_threshold=20)  # or use distance_threshold
+    clustering = AgglomerativeClustering(n_clusters=None, distance_threshold=20)
     labels = clustering.fit_predict(embeddings)
+    
+    # Organizza le immagini per cluster
+    clusters = {}
+    n_clusters = len(set(labels))
+    
+    for i, label in enumerate(labels):
+        if label not in clusters:
+            clusters[label] = []
+        clusters[label].append({
+            'image': crops[i],
+            'index': i
+        })
+    
+    # Genera il report con ChatGPT
+    generate_report(clusters, original_url, image_infos, n_clusters)
+
+
+def image_to_base64(img):
+    """Converti un'immagine PIL in base64"""
+    buffered = BytesIO()
+    img.save(buffered, format="PNG")
+    return base64.b64encode(buffered.getvalue()).decode()
+
+
+def generate_report(clusters, original_url, image_infos, n_clusters):
+    """Genera un report PDF usando ChatGPT per l'analisi"""
+    
+    openai_api_key = os.environ.get('OPENAI_API_KEY')
+    if not openai_api_key:
+        print("Error: OPENAI_API_KEY non impostata")
+        return
+    
+    openai.api_key = openai_api_key
+    
+    # Prepara le immagini per ogni cluster (sample)
+    cluster_samples = {}
+    for cluster_id, items in clusters.items():
+        # Prendi al massimo 3 immagini per cluster per non superare i limiti
+        samples = items[:3]
+        cluster_samples[cluster_id] = [image_to_base64(item['image']) for item in samples]
+    
+    # Costruisci il prompt per ChatGPT
+    prompt = f"""Analyze these clustered images from a drone survey. 
+    
+Total clusters found: {n_clusters}
+Number of objects: {len([item for items in clusters.values() for item in items])}
+
+For each cluster, I'm providing up to 3 sample images. Please analyze and provide:
+1. A description of what type of objects/species are in each cluster
+2. Key characteristics that distinguish each cluster
+3. Ecological or environmental insights about these findings
+4. Recommendations based on the analysis
+
+Format your response as a structured report with sections for each cluster.
+"""
+    
+    # Prepara i messaggi per OpenAI con le immagini
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt}
+            ]
+        }
+    ]
+    
+    # Aggiungi le immagini di esempio per ogni cluster
+    for cluster_id, images_b64 in cluster_samples.items():
+        messages[0]["content"].append({
+            "type": "text", 
+            "text": f"\n--- Cluster {cluster_id} ({len(clusters[cluster_id])} objects) ---"
+        })
+        for img_b64 in images_b64:
+            messages[0]["content"].append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/png;base64,{img_b64}"
+                }
+            })
+    
+    try:
+        # Chiama ChatGPT
+        response = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            max_tokens=2000
+        )
+        
+        analysis_text = response.choices[0].message.content
+        
+        # Genera il PDF
+        create_pdf_report(clusters, analysis_text, n_clusters, original_url)
+        
+        print(f"Report generato con successo: clustering_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
+        
+    except Exception as e:
+        print(f"Errore nella generazione del report: {str(e)}")
+
+
+def create_pdf_report(clusters, analysis_text, n_clusters, original_url):
+    """Crea il PDF del report"""
+    
+    filename = f"/app/clustering_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    doc = SimpleDocTemplate(filename, pagesize=A4)
+    story = []
+    
+    # Stili
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#2C3E50'),
+        spaceAfter=30,
+        alignment=TA_CENTER
+    )
+    
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=colors.HexColor('#34495E'),
+        spaceAfter=12
+    )
+    
+    # Titolo
+    story.append(Paragraph("Drone Survey - Clustering Analysis Report", title_style))
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Sommario
+    story.append(Paragraph(f"Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
+    story.append(Paragraph(f"Total Clusters Identified: {n_clusters}", styles['Normal']))
+    story.append(Paragraph(f"Total Objects Analyzed: {len([item for items in clusters.values() for item in items])}", styles['Normal']))
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Analisi di ChatGPT
+    story.append(Paragraph("AI Analysis", heading_style))
+    for line in analysis_text.split('\n'):
+        if line.strip():
+            story.append(Paragraph(line, styles['Normal']))
+            story.append(Spacer(1, 0.1*inch))
+    
+    story.append(PageBreak())
+    
+    # Dettagli dei cluster con immagini
+    story.append(Paragraph("Cluster Details", heading_style))
+    
+    for cluster_id, items in sorted(clusters.items()):
+        story.append(Paragraph(f"Cluster {cluster_id} - {len(items)} objects", styles['Heading3']))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Aggiungi fino a 6 immagini per cluster
+        images_to_show = items[:6]
+        for item in images_to_show:
+            img_buffer = BytesIO()
+            item['image'].save(img_buffer, format='PNG')
+            img_buffer.seek(0)
+            
+            # Ridimensiona per il PDF
+            img = RLImage(img_buffer, width=2*inch, height=2*inch)
+            story.append(img)
+            story.append(Spacer(1, 0.1*inch))
+        
+        if len(items) > 6:
+            story.append(Paragraph(f"... and {len(items) - 6} more objects", styles['Italic']))
+        
+        story.append(Spacer(1, 0.3*inch))
+    
+    # Build PDF
+    doc.build(story)
+    print(f"PDF salvato: {filename}")
+
 
 
 if __name__ == '__main__':
