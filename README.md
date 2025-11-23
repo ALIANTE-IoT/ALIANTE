@@ -82,6 +82,23 @@ The system is composed of several microservices orchestrated via Docker Compose:
 - Processes SAM3 segmentation results
 - Groups similar image crops for pattern analysis
 
+<p align="center">
+  <img src="docs/images/output8.png" alt="Clustering summary chart" width="900">
+  <br/>
+  <em>High-level clustering summary showing inter-species relationships.</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/output.png" alt="Clustered trees sample 1" width="220">
+  <img src="docs/images/output2.png" alt="Clustered trees sample 2" width="220">
+  <img src="docs/images/output3.png" alt="Clustered trees sample 3" width="220">
+</p>
+<p align="center">
+  <img src="docs/images/output5.png" alt="Clustered trees sample 4" width="220">
+  <img src="docs/images/output6.png" alt="Clustered trees sample 5" width="220">
+  <img src="docs/images/output7.png" alt="Clustered trees sample 6" width="220">
+</p>
+
 #### 6. **Web Frontend** (`tree-analyzer-web/`)
 - React application with Vite
 - Image upload interface
