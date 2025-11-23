@@ -192,6 +192,30 @@ When you respond, include the segmentation data verbatim under the "sam3_segment
             console.warn("OpenAI response not JSON. Forwarding raw text.");
         }
 
+        // Invia i dati al modulo di clustering
+        try {
+            const clusteringUrl = process.env.CLUSTERING_URL || 'http://clustering:5051/receive';
+            const clusteringResponse = await fetch(clusteringUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    content: [{
+                        text: JSON.stringify(sam3Segmentations)
+                    }]
+                })
+            });
+            
+            if (clusteringResponse.ok) {
+                console.log('[Clustering] Dati inviati con successo');
+            } else {
+                console.warn('[Clustering] Errore nell\'invio:', await clusteringResponse.text());
+            }
+        } catch (clusteringError) {
+            console.error('[Clustering] Impossibile inviare i dati:', clusteringError.message);
+        }
+
         res.json({
             model: OPENAI_MODEL,
             imageUrl,
@@ -200,6 +224,7 @@ When you respond, include the segmentation data verbatim under the "sam3_segment
             sam3Segmentations,
             raw: parsed || text,
         });
+
     } catch (error) {
         console.error("OpenAI analysis failed", error);
         res.status(502).json({

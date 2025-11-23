@@ -1,0 +1,8 @@
+flask
+Pillow
+requests
+numpy
+supervision
+torch
+transformers
+scikit-learn
