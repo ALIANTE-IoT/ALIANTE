@@ -5,8 +5,15 @@ import OpenAI from "openai";
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const SAMPLE_DIR = path.resolve(__dirname, "../sample-images");
 
 const PORT = process.env.PORT || 4000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -14,6 +21,14 @@ const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const SAM3_MCP_URL =
     process.env.SAM3_MCP_URL ||
     "https://lauz.lab.students.cs.unibo.it/gradio_api/mcp/sse";
+const DRONE_THING_URL =
+    process.env.DRONE_THING_URL || "http://servient1:8080/drone1-thing";
+const DEMO_TAKEOFF_ALT = Number(process.env.DEMO_TAKEOFF_ALT || "30");
+const IMAGE_SERVICE_API =
+    process.env.IMAGE_SERVICE_API || "http://image-storage:4100/api/images";
+const CLUSTERING_URL =
+    process.env.CLUSTERING_URL || "http://clustering:5051/receive";
+const TAKE_PHOTO_DELAY_MS = Number(process.env.DEMO_CAPTURE_DELAY_MS || "2500");
 
 const client = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 
@@ -105,6 +120,93 @@ const callSam3Segmentations = async (imageUrl, prompt) => {
     }
 };
 
+const SAMPLE_IMAGES = [
+    {
+        id: "demo-forest",
+        filePath: path.join(SAMPLE_DIR, "demo-forest.png"),
+        description: "Dense forest canopy",
+        mime: "image/png",
+    },
+    {
+        id: "demo-orchard",
+        filePath: path.join(SAMPLE_DIR, "demo-orchard.png"),
+        description: "Curated orchard rows",
+        mime: "image/png",
+    },
+].filter((sample) => fs.existsSync(sample.filePath));
+
+if (!SAMPLE_IMAGES.length) {
+    console.warn(
+        "Warning: no sample images found in sample-images/. Demo flight uploads will fail until at least one image is available.",
+    );
+}
+
+const selectSample = (sampleId) => {
+    if (!SAMPLE_IMAGES.length) {
+        return null;
+    }
+    if (!sampleId) {
+        return SAMPLE_IMAGES[0];
+    }
+    return (
+        SAMPLE_IMAGES.find((sample) => sample.id === sampleId) ||
+        SAMPLE_IMAGES[0]
+    );
+};
+
+const cleanedImageServiceUrl = IMAGE_SERVICE_API.replace(/\/+$/, "");
+
+async function uploadSampleImage(sample) {
+    if (!cleanedImageServiceUrl) {
+        throw new Error("IMAGE_SERVICE_API is not configured.");
+    }
+    const buffer = await fs.promises.readFile(sample.filePath);
+    const blob = new Blob([buffer], { type: sample.mime });
+    const formData = new FormData();
+    formData.append(
+        "image",
+        blob,
+        path.basename(sample.filePath) || `${sample.id}.png`,
+    );
+    const response = await fetch(cleanedImageServiceUrl, {
+        method: "POST",
+        body: formData,
+    });
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(
+            `Image upload failed: ${response.status} ${text || "unknown error"}`,
+        );
+    }
+    return response.json();
+}
+
+const trimmedThingUrl = DRONE_THING_URL.replace(/\/+$/, "");
+
+async function invokeDroneAction(action, payload = {}) {
+    if (!trimmedThingUrl) {
+        return {
+            action,
+            skipped: true,
+            message: "DRONE_THING_URL is not configured; skipping action.",
+        };
+    }
+    const response = await fetch(`${trimmedThingUrl}/actions/${action}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload ?? {}),
+    });
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(
+            `Drone action ${action} failed (${response.status}): ${text || ""}`,
+        );
+    }
+    return { action, success: true };
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const promptTemplate = `You are a biodiversity analyst assisting an insurance inspector.
 Given a drone photo URL, a short request from the inspector, and optional SAM3 segmentation metadata, produce JSON with this schema:
 {
@@ -132,6 +234,72 @@ const buildAnalysis = (parsed, fallbackText, prompt, sam3Segmentations) => ({
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
+
+app.post("/api/demo-flight", async (req, res) => {
+    const { lat, lon, sampleId } = req.body || {};
+    const latNum = Number(lat);
+    const lonNum = Number(lon);
+
+    if (!Number.isFinite(latNum) || latNum < -90 || latNum > 90) {
+        return res.status(400).json({ error: "Invalid latitude" });
+    }
+    if (!Number.isFinite(lonNum) || lonNum < -180 || lonNum > 180) {
+        return res.status(400).json({ error: "Invalid longitude" });
+    }
+
+    const sample = selectSample(sampleId);
+    if (!sample) {
+        return res
+            .status(500)
+            .json({ error: "No demo samples available on the server." });
+    }
+
+    const droneLog = [];
+    const trackAction = async (action, payload) => {
+        try {
+            const result = await invokeDroneAction(action, payload);
+            droneLog.push(result);
+        } catch (error) {
+            droneLog.push({
+                action,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    };
+
+    try {
+        await trackAction("arm");
+        await trackAction("takeoff", { alt: DEMO_TAKEOFF_ALT });
+        await sleep(1000);
+        await trackAction("goto", {
+            lat: latNum,
+            lon: lonNum,
+            alt: DEMO_TAKEOFF_ALT,
+        });
+        await sleep(TAKE_PHOTO_DELAY_MS);
+
+        const uploadResult = await uploadSampleImage(sample);
+
+        res.json({
+            status: "ok",
+            lat: latNum,
+            lon: lonNum,
+            sampleId: sample.id,
+            sampleDescription: sample.description,
+            demoImage: uploadResult,
+            imageUrl: uploadResult?.url,
+            droneLog,
+            message:
+                "Drone demo completed. Sample capture uploaded and ready for analysis.",
+        });
+    } catch (error) {
+        console.error("Demo flight failed", error);
+        res.status(500).json({
+            error: "Demo flight failed",
+            details: error instanceof Error ? error.message : String(error),
+        });
+    }
+});
 
 app.post("/api/biodiversity", async (req, res) => {
     const { imageUrl, prompt } = req.body || {};
@@ -194,26 +362,33 @@ When you respond, include the segmentation data verbatim under the "sam3_segment
 
         // Invia i dati al modulo di clustering
         try {
-            const clusteringUrl = process.env.CLUSTERING_URL || 'http://clustering:5051/receive';
-            const clusteringResponse = await fetch(clusteringUrl, {
-                method: 'POST',
+            const clusteringResponse = await fetch(CLUSTERING_URL, {
+                method: "POST",
                 headers: {
-                    'Content-Type': 'application/json',
+                    "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
-                    content: [{
-                        text: JSON.stringify(sam3Segmentations)
-                    }]
-                })
+                    content: [
+                        {
+                            text: JSON.stringify(sam3Segmentations),
+                        },
+                    ],
+                }),
             });
-            
+
             if (clusteringResponse.ok) {
-                console.log('[Clustering] Dati inviati con successo');
+                console.log("[Clustering] Dati inviati con successo");
             } else {
-                console.warn('[Clustering] Errore nell\'invio:', await clusteringResponse.text());
+                console.warn(
+                    "[Clustering] Errore nell'invio:",
+                    await clusteringResponse.text(),
+                );
             }
         } catch (clusteringError) {
-            console.error('[Clustering] Impossibile inviare i dati:', clusteringError.message);
+            console.error(
+                "[Clustering] Impossibile inviare i dati:",
+                clusteringError.message,
+            );
         }
 
         res.json({
@@ -224,7 +399,6 @@ When you respond, include the segmentation data verbatim under the "sam3_segment
             sam3Segmentations,
             raw: parsed || text,
         });
-
     } catch (error) {
         console.error("OpenAI analysis failed", error);
         res.status(502).json({

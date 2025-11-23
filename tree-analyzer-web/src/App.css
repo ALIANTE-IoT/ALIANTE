@@ -37,6 +37,50 @@ header h1 {
     background: rgba(0, 0, 0, 0.15);
 }
 
+.flight-controls {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.flight-controls h3 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.flight-controls .helper {
+    margin: 0.15rem 0 0;
+    font-size: 0.85rem;
+    opacity: 0.7;
+}
+
+.coord-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.coord-row label {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.9rem;
+}
+
+.coord-row input {
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(0, 0, 0, 0.35);
+    color: inherit;
+    font-size: 1rem;
+}
+
 .file-label {
     border: 1px dashed rgba(255, 255, 255, 0.4);
     border-radius: 10px;
@@ -104,6 +148,11 @@ textarea {
 .status {
     font-size: 0.95rem;
     opacity: 0.8;
+}
+
+.flight-status {
+    font-size: 0.9rem;
+    color: #7ed5ff;
 }
 
 .error {
