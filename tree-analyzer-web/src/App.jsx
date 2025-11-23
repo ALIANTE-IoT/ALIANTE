@@ -18,6 +18,10 @@ function App() {
     const [error, setError] = useState("");
     const [isUploading, setIsUploading] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [targetLat, setTargetLat] = useState("44.4940");
+    const [targetLon, setTargetLon] = useState("11.3420");
+    const [isFlying, setIsFlying] = useState(false);
+    const [flightStatus, setFlightStatus] = useState("");
 
     const analyzerEndpoint = useMemo(() => {
         return (
@@ -29,10 +33,21 @@ function App() {
         return import.meta.env.VITE_IMAGE_SERVICE_API ?? DEFAULT_IMAGE_ENDPOINT;
     }, []);
 
+    const analyzerBase = useMemo(() => {
+        const override = import.meta.env.VITE_TREE_ANALYZER_BASE;
+        if (override) return override.replace(/\/$/, "");
+        const idx = analyzerEndpoint.indexOf("/api/");
+        if (idx >= 0) {
+            return analyzerEndpoint.slice(0, idx);
+        }
+        return analyzerEndpoint.replace(/\/$/, "");
+    }, [analyzerEndpoint]);
+
     const resetUpload = () => {
         setImageUrl("");
         setAnalysis(null);
         setUploadMessage("Ready to upload a new snapshot.");
+        setFlightStatus("");
     };
 
     const handleFileChange = (event) => {
@@ -82,6 +97,9 @@ function App() {
 
     const ensureUploadedUrl = async () => {
         if (imageUrl) return imageUrl;
+        if (!selectedFile) {
+            throw new Error("No image available for upload.");
+        }
         return uploadImage();
     };
 
@@ -90,8 +108,8 @@ function App() {
             setError("Please describe which biodiversity aspect to analyze.");
             return;
         }
-        if (!selectedFile) {
-            setError("Please select a drone image first.");
+        if (!selectedFile && !imageUrl) {
+            setError("Please select or capture a drone image first.");
             return;
         }
         setError("");
@@ -118,7 +136,6 @@ function App() {
             console.error("Analysis failed", err);
             setError(err.message || "Unknown error occurred.");
         } finally {
-            setIsUploading(false);
             setIsAnalyzing(false);
         }
     };
@@ -138,6 +155,57 @@ function App() {
                 : JSON.stringify(segmentationPayload, null, 2);
 
         return <pre className="json-block">{serialized}</pre>;
+    };
+
+    const handleSimulatedCapture = async () => {
+        const latNum = Number(targetLat);
+        const lonNum = Number(targetLon);
+        if (!Number.isFinite(latNum) || latNum < -90 || latNum > 90) {
+            setError("Latitude must be between -90 and 90 degrees.");
+            return;
+        }
+        if (!Number.isFinite(lonNum) || lonNum < -180 || lonNum > 180) {
+            setError("Longitude must be between -180 and 180 degrees.");
+            return;
+        }
+        setError("");
+        setAnalysis(null);
+        setIsFlying(true);
+        setUploadMessage("Simulating drone flight...");
+        setFlightStatus("Arming drone and moving to coordinates...");
+        try {
+            const response = await fetch(`${analyzerBase}/api/demo-flight`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    lat: latNum,
+                    lon: lonNum,
+                }),
+            });
+            if (!response.ok) {
+                const details = await response.json().catch(() => ({}));
+                throw new Error(details?.error || "Demo flight failed.");
+            }
+            const payload = await response.json();
+            if (payload?.imageUrl) {
+                setImageUrl(payload.imageUrl);
+                setPreviewUrl(payload.imageUrl);
+                setSelectedFile(null);
+                setUploadMessage(
+                    "Sample image captured via drone demo. Ready for analysis.",
+                );
+            }
+            setFlightStatus(payload?.message || "Drone demo completed.");
+            if (payload?.droneLog?.length) {
+                console.table?.(payload.droneLog);
+            }
+        } catch (err) {
+            console.error("Demo flight failed", err);
+            setError(err.message || "Demo flight failed.");
+            setFlightStatus("Demo flight failed.");
+        } finally {
+            setIsFlying(false);
+        }
     };
 
     return (
@@ -165,9 +233,49 @@ function App() {
                 {previewUrl && (
                     <div className="preview">
                         <img src={previewUrl} alt="Selected drone frame" />
-                        <small>{selectedFile?.name}</small>
+                        <small>{selectedFile?.name || "Demo capture"}</small>
                     </div>
                 )}
+
+                <div className="flight-controls">
+                    <div>
+                        <h3>Simulated Drone Capture</h3>
+                        <p className="helper">
+                            Enter target coordinates and let the demo drone arm,
+                            fly, and capture a sample frame automatically.
+                        </p>
+                    </div>
+                    <div className="coord-row">
+                        <label>
+                            Latitude
+                            <input
+                                type="number"
+                                step="0.0001"
+                                value={targetLat}
+                                onChange={(e) => setTargetLat(e.target.value)}
+                            />
+                        </label>
+                        <label>
+                            Longitude
+                            <input
+                                type="number"
+                                step="0.0001"
+                                value={targetLon}
+                                onChange={(e) => setTargetLon(e.target.value)}
+                            />
+                        </label>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={handleSimulatedCapture}
+                        disabled={isFlying || isAnalyzing || isUploading}
+                    >
+                        {isFlying ? "Flying & Capturing..." : "Fly & Capture"}
+                    </button>
+                    {flightStatus && (
+                        <p className="flight-status">{flightStatus}</p>
+                    )}
+                </div>
 
                 {imageUrl && (
                     <p className="image-url">

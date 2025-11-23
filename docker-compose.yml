@@ -155,6 +155,18 @@ services:
             ZION_JWT_EXPIRES_IN: 7d
         networks: [drones]
 
+    monitor:
+        build:
+            context: ./monitor-ui
+            args:
+                VITE_SERVIENTS: ${MONITOR_SERVIENTS:-drone1|Drone 1=http://localhost:19080/drone1-thing}
+                VITE_POLL_INTERVAL_MS: ${MONITOR_POLL_INTERVAL_MS:-2000}
+        depends_on:
+            servient1: { condition: service_started }
+        ports:
+            - "127.0.0.1:4173:80"
+        networks: [drones]
+
 networks:
     drones:
         driver: bridge
