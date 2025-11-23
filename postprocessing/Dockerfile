@@ -16,7 +16,10 @@ RUN apt-get update && apt-get install -y \
 
 # Copia requirements
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+
+# Usa cache mounting per pip per velocizzare i build successivi
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copia il codice
 COPY clustering.py .
