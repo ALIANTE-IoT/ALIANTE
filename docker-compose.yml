@@ -67,6 +67,34 @@ services:
         ports:
             - "127.0.0.1:19080:8080"
 
+    image-storage:
+        build: ./image-storage-service
+        restart: unless-stopped
+        environment:
+            PORT: "4100"
+            STORAGE_DIR: "/data/uploads"
+            PUBLIC_BASE_URL: "${IMAGE_PUBLIC_BASE_URL:-http://127.0.0.1:4100}"
+        volumes:
+            - image_uploads:/data/uploads
+        ports:
+            - "0.0.0.0:4100:4100"
+        networks:
+            - drones
+
+    tree-analyzer:
+        build: ./tree-analyzer-service
+        restart: unless-stopped
+        depends_on:
+            image-storage: { condition: service_started }
+        environment:
+            PORT: "4000"
+            OPENAI_API_KEY: "${OPENAI_API_KEY}"
+            OPENAI_MODEL: "${OPENAI_MODEL:-gpt-4o-mini}"
+        ports:
+            - "127.0.0.1:4000:4000"
+        networks:
+            - drones
+
     tree-analyzer-web:
         build: ./tree-analyzer-web
         restart: unless-stopped
@@ -119,3 +147,4 @@ networks:
         driver: bridge
 volumes:
     zion_pg:
+    image_uploads:
